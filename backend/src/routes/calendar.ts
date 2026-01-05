@@ -1,11 +1,11 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { listEvents, createEvent, updateEvent, deleteEvent, findEventByTime } from '../services/calendar';
 import { supabase } from '../utils/db';
 
 const router = Router();
 
 // Get user's calendar events
-router.get('/events', async (req, res) => {
+router.get('/events', async (req: Request, res: Response) => {
   try {
     const userId = req.query.userId as string;
     if (!userId) {
@@ -32,7 +32,7 @@ router.get('/events', async (req, res) => {
 });
 
 // Create calendar event
-router.post('/events', async (req, res) => {
+router.post('/events', async (req: Request, res: Response) => {
   try {
     const { userId, summary, startTime, endTime, description } = req.body;
 
@@ -60,7 +60,7 @@ router.post('/events', async (req, res) => {
 });
 
 // Update calendar event
-router.put('/events/:eventId', async (req, res) => {
+router.put('/events/:eventId', async (req: Request, res: Response) => {
   try {
     const { userId, summary, startTime, endTime, description } = req.body;
     const { eventId } = req.params;
@@ -91,7 +91,7 @@ router.put('/events/:eventId', async (req, res) => {
 });
 
 // Delete calendar event
-router.delete('/events/:eventId', async (req, res) => {
+router.delete('/events/:eventId', async (req: Request, res: Response) => {
   try {
     const { userId } = req.query;
     const { eventId } = req.params;

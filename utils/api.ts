@@ -19,32 +19,70 @@ const API_BASE_URL = getApiBaseUrl();
 export interface ApiResponse<T> {
   data?: T;
   error?: string;
+  needsReauth?: boolean;
 }
 
 async function fetchAPI<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  retries = 3
 ): Promise<ApiResponse<T>> {
-  try {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-    });
+  let lastError: any;
+  
+  for (let i = 0; i < retries; i++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+      
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          ...options.headers,
+        },
+        signal: controller.signal,
+      });
+      
+      clearTimeout(timeoutId);
 
-    const data = await response.json();
+      const data = await response.json();
 
-    if (!response.ok) {
-      return { error: data.error || 'Request failed' };
+      if (!response.ok) {
+        const errorMessage = data.error || 'Request failed';
+        
+        if (response.status === 401 && data.needsReauth) {
+          return { error: errorMessage, needsReauth: true } as any;
+        }
+        
+        if (response.status >= 500 && i < retries - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+          continue;
+        }
+        
+        return { error: errorMessage };
+      }
+
+      return { data };
+    } catch (error: any) {
+      lastError = error;
+      console.error(`API Error (attempt ${i + 1}/${retries}):`, error);
+      
+      if (error.name === 'AbortError') {
+        if (i < retries - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+          continue;
+        }
+        return { error: 'Request timeout. Please check your connection.' };
+      }
+      
+      if (i < retries - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+        continue;
+      }
     }
-
-    return { data };
-  } catch (error) {
-    console.error('API Error:', error);
-    return { error: 'Network error' };
   }
+  
+  return { error: lastError?.message || 'Network error. Please check your connection.' };
 }
 
 // Task API

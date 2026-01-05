@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { parseCommand, requiresApproval, generatePreview } from '../services/ai';
 import { supabase } from '../utils/db';
 import { findEventByTime, createEvent, updateEvent, deleteEvent, listEvents } from '../services/calendar';
@@ -7,7 +7,7 @@ import { listMessages, sendEmail, draftEmail } from '../services/email';
 const router = Router();
 
 // Parse command and return intent
-router.post('/parse', async (req, res) => {
+router.post('/parse', async (req: Request, res: Response) => {
   try {
     const { command } = req.body;
 
@@ -31,7 +31,7 @@ router.post('/parse', async (req, res) => {
 });
 
 // Create task
-router.post('/create', async (req, res) => {
+router.post('/create', async (req: Request, res: Response) => {
   try {
     const { userId, command, intent, requiresApproval: needsApproval, preview } = req.body;
 
@@ -69,7 +69,7 @@ router.post('/create', async (req, res) => {
 });
 
 // Execute task
-router.post('/execute', async (req, res) => {
+router.post('/execute', async (req: Request, res: Response) => {
   try {
     const { taskId, userId } = req.body;
 
@@ -344,7 +344,7 @@ router.post('/execute', async (req, res) => {
 });
 
 // Get user tasks
-router.get('/user/:userId', async (req, res) => {
+router.get('/user/:userId', async (req: Request, res: Response) => {
   try {
     const { data, error } = await supabase
       .from('tasks')
@@ -363,7 +363,7 @@ router.get('/user/:userId', async (req, res) => {
 });
 
 // Approve task
-router.post('/approve', async (req, res) => {
+router.post('/approve', async (req: Request, res: Response) => {
   try {
     const { taskId, userId } = req.body;
 
@@ -386,7 +386,7 @@ router.post('/approve', async (req, res) => {
 });
 
 // Reject task
-router.post('/reject', async (req, res) => {
+router.post('/reject', async (req: Request, res: Response) => {
   try {
     const { taskId, userId } = req.body;
 

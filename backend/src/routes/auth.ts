@@ -1,6 +1,7 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { google } from 'googleapis';
 import { supabase } from '../utils/db';
+import { OAuth2Client } from 'google-auth-library';
 
 const router = Router();
 
@@ -14,8 +15,24 @@ const oauth2Client = new google.auth.OAuth2(
   REDIRECT_URI
 );
 
+// Token refresh helper
+async function refreshAccessToken(refreshToken: string) {
+  try {
+    const client = new OAuth2Client(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET
+    );
+    client.setCredentials({ refresh_token: refreshToken });
+    const { credentials } = await client.refreshAccessToken();
+    return credentials;
+  } catch (error) {
+    console.error('Token refresh error:', error);
+    throw new Error('Failed to refresh access token');
+  }
+}
+
 // Step 1: Get authorization URL
-router.get('/google', (req, res) => {
+router.get('/google', (req: Request, res: Response) => {
   const scopes = [
     'https://www.googleapis.com/auth/calendar',
     'https://www.googleapis.com/auth/calendar.events',
@@ -34,8 +51,8 @@ router.get('/google', (req, res) => {
 });
 
 // Step 2: Handle callback
-router.get('/google/callback', async (req, res) => {
-  const { code, state } = req.query;
+router.get('/google/callback', async (req: Request, res: Response) => {
+  const { code } = req.query;
 
   if (!code) {
     return res.status(400).json({ error: 'No code provided' });
@@ -222,7 +239,7 @@ router.get('/google/callback', async (req, res) => {
 });
 
 // Get user by ID (for app to fetch user data after OAuth)
-router.get('/user/:userId', async (req, res) => {
+router.get('/user/:userId', async (req: Request, res: Response) => {
   try {
     const { data, error } = await supabase
       .from('users')
@@ -247,8 +264,8 @@ router.get('/user/:userId', async (req, res) => {
   }
 });
 
-// Get user tokens (for API calls)
-router.get('/tokens/:userId', async (req, res) => {
+// Get user tokens (for API calls) - with auto-refresh
+router.get('/tokens/:userId', async (req: Request, res: Response) => {
   try {
     const { data, error } = await supabase
       .from('users')
@@ -260,9 +277,87 @@ router.get('/tokens/:userId', async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    res.json({ tokens: data.google_tokens });
+    let tokens = data.google_tokens;
+
+    // Check if token is expired and refresh if needed
+    if (tokens?.expiry_date && tokens.refresh_token) {
+      const now = Date.now();
+      const expiryDate = tokens.expiry_date;
+      
+      // Refresh if token expires in less than 5 minutes
+      if (expiryDate < now + 5 * 60 * 1000) {
+        try {
+          const newTokens = await refreshAccessToken(tokens.refresh_token);
+          
+          // Update tokens in database
+          await supabase
+            .from('users')
+            .update({
+              google_tokens: {
+                ...tokens,
+                access_token: newTokens.access_token,
+                expiry_date: newTokens.expiry_date,
+              },
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', req.params.userId);
+          
+          tokens = {
+            ...tokens,
+            access_token: newTokens.access_token,
+            expiry_date: newTokens.expiry_date,
+          };
+        } catch (refreshError) {
+          console.error('Failed to refresh token:', refreshError);
+          return res.status(401).json({ 
+            error: 'Token expired and refresh failed. Please re-authenticate.',
+            needsReauth: true 
+          });
+        }
+      }
+    }
+
+    res.json({ tokens });
   } catch (error) {
+    console.error('Get tokens error:', error);
     res.status(500).json({ error: 'Failed to get tokens' });
+  }
+});
+
+// Refresh tokens endpoint
+router.post('/refresh/:userId', async (req: Request, res: Response) => {
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .select('google_tokens')
+      .eq('id', req.params.userId)
+      .single();
+
+    if (error || !data || !data.google_tokens?.refresh_token) {
+      return res.status(404).json({ error: 'User not found or no refresh token available' });
+    }
+
+    const newTokens = await refreshAccessToken(data.google_tokens.refresh_token);
+    
+    // Update tokens in database
+    const updatedTokens = {
+      ...data.google_tokens,
+      access_token: newTokens.access_token,
+      expiry_date: newTokens.expiry_date,
+    };
+
+    await supabase
+      .from('users')
+      .update({
+        google_tokens: updatedTokens,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', req.params.userId);
+
+    res.json({ tokens: updatedTokens });
+  } catch (error) {
+    console.error('Refresh error:', error);
+    res.status(500).json({ error: 'Failed to refresh tokens' });
   }
 });
 
