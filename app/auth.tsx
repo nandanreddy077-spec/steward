@@ -1,18 +1,23 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   Animated,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Chrome, Mail } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
+import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
 import { useApp } from '@/store/AppContext';
 import Colors from '@/constants/colors';
 import { User } from '@/types';
+import { authAPI } from '@/utils/api';
 
 export default function AuthScreen() {
   const router = useRouter();
@@ -22,7 +27,7 @@ export default function AuthScreen() {
   const [fadeAnim] = useState(new Animated.Value(0));
   const [slideAnim] = useState(new Animated.Value(30));
 
-  useState(() => {
+  useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -35,27 +40,112 @@ export default function AuthScreen() {
         useNativeDriver: true,
       }),
     ]).start();
-  });
+  }, []);
+
+  // Handle deep links for OAuth callback
+  useEffect(() => {
+    const handleDeepLink = async (event: { url: string }) => {
+      const { url } = event;
+      console.log('Deep link received:', url);
+      
+      if (url.includes('auth/callback')) {
+        const parsedUrl = Linking.parse(url);
+        const params = parsedUrl.queryParams;
+        
+        if (params?.success === 'true' && params?.userId) {
+          // OAuth successful!
+          setIsLoading(null);
+          
+          try {
+            // Fetch user data from backend to ensure we have latest info
+            const userResponse = await authAPI.getUser(params.userId as string);
+            
+            if (userResponse.error || !userResponse.data) {
+              throw new Error(userResponse.error || 'Failed to fetch user data');
+            }
+
+            const userData = userResponse.data.user;
+            
+            // Create user object
+            const user: User = {
+              id: userData.id,
+              email: userData.email,
+              name: userData.name || 'User',
+              subscription: 'trial',
+              connectedAccounts: {
+                google: userData.hasGoogleTokens,
+                microsoft: false,
+              },
+            };
+            
+            login(user);
+            router.replace('/(main)/home');
+          } catch (error: any) {
+            console.error('Error handling OAuth callback:', error);
+            Alert.alert('Error', error.message || 'Failed to complete authentication');
+            setIsLoading(null);
+          }
+        }
+      }
+    };
+
+    // Listen for deep links when app is already open
+    const subscription = Linking.addEventListener('url', handleDeepLink);
+    
+    // Check if app was opened via deep link (when app was closed)
+    Linking.getInitialURL().then(url => {
+      if (url) {
+        handleDeepLink({ url });
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [login, router]);
 
   const handleOAuth = async (provider: 'google' | 'microsoft') => {
+    if (provider !== 'google') {
+      Alert.alert('Not Supported', 'Microsoft authentication coming soon!');
+      return;
+    }
+
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setIsLoading(provider);
+    setIsLoading('google');
 
-    setTimeout(() => {
-      const mockUser: User = {
-        id: 'user_001',
-        name: 'Alex Chen',
-        email: provider === 'google' ? 'alex@company.com' : 'alex@outlook.com',
-        subscription: 'trial',
-        connectedAccounts: {
-          google: provider === 'google',
-          microsoft: provider === 'microsoft',
-        },
-      };
+    try {
+      // Step 1: Get OAuth URL from backend
+      const authUrlResponse = await authAPI.getGoogleAuthUrl();
+      
+      if (authUrlResponse.error || !authUrlResponse.data) {
+        Alert.alert('Error', authUrlResponse.error || 'Failed to get OAuth URL');
+        setIsLoading(null);
+        return;
+      }
 
-      login(mockUser);
-      router.replace('/(main)/home');
-    }, 1500);
+      const authUrl = authUrlResponse.data.authUrl;
+      const redirectUrl = Linking.createURL('/auth/callback');
+
+      // Step 2: Open browser for authentication with deep link callback
+      // openAuthSessionAsync handles the OAuth flow and redirects back to app
+      const result = await WebBrowser.openAuthSessionAsync(
+        authUrl,
+        redirectUrl
+      );
+
+      // The deep link handler will process the result
+      // If user dismisses, just reset loading state
+      if (result.type === 'dismiss' || result.type === 'cancel') {
+        setIsLoading(null);
+      } else if (result.type === 'locked') {
+        Alert.alert('Error', 'Please unlock your device to continue');
+        setIsLoading(null);
+      }
+    } catch (error: any) {
+      console.error('OAuth error:', error);
+      Alert.alert('Error', error.message || 'OAuth authentication failed');
+      setIsLoading(null);
+    }
   };
 
   return (

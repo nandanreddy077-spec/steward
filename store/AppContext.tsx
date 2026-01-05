@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect, useCallback } from 'react';
 import { Task, User, ActivityLogEntry, DailyBrief, UserSettings, TaskStatus } from '@/types';
 import { parseCommand, requiresApproval, generatePreview } from '@/utils/taskParser';
+import { taskAPI } from '@/utils/api';
 
 const STORAGE_KEYS = {
   USER: 'chief_user',
@@ -114,9 +115,30 @@ export const [AppProvider, useApp] = createContextHook(() => {
 
   const createTaskMutation = useMutation({
     mutationFn: async (command: string) => {
-      const intent = parseCommand(command);
-      const needsApproval = requiresApproval(intent);
-      const preview = needsApproval ? generatePreview(intent, command) : undefined;
+      const userId = userQuery.data?.id || 'local_user';
+      
+      // Try backend API first, fallback to local parsing
+      let intent, needsApproval, preview;
+      
+      try {
+        const parseResult = await taskAPI.parse(command);
+        if (parseResult.data) {
+          intent = parseResult.data.intent;
+          needsApproval = parseResult.data.requiresApproval;
+          preview = parseResult.data.preview;
+        } else {
+          // Fallback to local parsing
+          intent = parseCommand(command);
+          needsApproval = requiresApproval(intent);
+          preview = needsApproval ? generatePreview(intent, command) : undefined;
+        }
+      } catch (error) {
+        console.warn('Backend API unavailable, using local parsing:', error);
+        // Fallback to local parsing
+        intent = parseCommand(command);
+        needsApproval = requiresApproval(intent);
+        preview = needsApproval ? generatePreview(intent, command) : undefined;
+      }
       
       const task: Task = {
         id: generateId(),
@@ -128,6 +150,15 @@ export const [AppProvider, useApp] = createContextHook(() => {
         updatedAt: new Date(),
         preview,
       };
+
+      // Try to save to backend if available
+      try {
+        if (userQuery.data?.id) {
+          await taskAPI.create(userId, command, intent, needsApproval, preview);
+        }
+      } catch (error) {
+        console.warn('Failed to save to backend, using local storage:', error);
+      }
 
       const currentTasks = tasksQuery.data || [];
       const updatedTasks = [task, ...currentTasks];
@@ -150,7 +181,15 @@ export const [AppProvider, useApp] = createContextHook(() => {
       return { task, activity: logEntry };
     },
     onSuccess: ({ task, activity }) => {
-      queryClient.setQueryData(['tasks'], (old: Task[] | undefined) => [task, ...(old || [])]);
+      // Update cache directly instead of invalidating to prevent tasks from disappearing
+      queryClient.setQueryData(['tasks'], (old: Task[] | undefined) => {
+        const existing = old || [];
+        // Check if task already exists to avoid duplicates
+        if (existing.find(t => t.id === task.id)) {
+          return existing;
+        }
+        return [task, ...existing];
+      });
       queryClient.setQueryData(['activity'], (old: ActivityLogEntry[] | undefined) => [activity, ...(old || [])]);
       
       if (!task.requiresApproval) {
@@ -199,17 +238,49 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const executeTask = useCallback(async (taskId: string) => {
     await updateTaskStatus(taskId, 'executing');
     
+    const userId = userQuery.data?.id || 'local_user';
+    
+    try {
+      // Try backend execution if available
+      if (userQuery.data?.id) {
+        const result = await taskAPI.execute(taskId, userId);
+        if (result.data?.success) {
+          await updateTaskStatus(taskId, 'completed', {
+            success: true,
+            message: (result.data as any).result?.message || 'Task completed successfully',
+          });
+          return;
+        } else if (result.error) {
+          throw new Error(result.error);
+        }
+      }
+    } catch (error) {
+      console.warn('Backend execution failed, using mock:', error);
+    }
+    
+    // Fallback to mock execution (for testing without OAuth)
     setTimeout(async () => {
       const success = Math.random() > 0.1;
       await updateTaskStatus(taskId, success ? 'completed' : 'failed', {
         success,
-        message: success ? 'Task completed successfully' : 'Task execution failed. Queued for manual review.',
+        message: success ? 'Task completed successfully (mock execution)' : 'Task execution failed. Queued for manual review.',
       });
     }, 2000 + Math.random() * 1500);
-  }, [updateTaskStatus]);
+  }, [updateTaskStatus, userQuery.data]);
 
   const approveTaskMutation = useMutation({
     mutationFn: async (taskId: string) => {
+      const userId = userQuery.data?.id || 'local_user';
+      
+      // Try backend API first
+      try {
+        if (userQuery.data?.id) {
+          await taskAPI.approve(taskId, userId);
+        }
+      } catch (error) {
+        console.warn('Backend approval failed, using local:', error);
+      }
+      
       await updateTaskStatus(taskId, 'approved');
       setTimeout(() => executeTask(taskId), 500);
       return taskId;
@@ -218,6 +289,17 @@ export const [AppProvider, useApp] = createContextHook(() => {
 
   const rejectTaskMutation = useMutation({
     mutationFn: async (taskId: string) => {
+      const userId = userQuery.data?.id || 'local_user';
+      
+      // Try backend API first
+      try {
+        if (userQuery.data?.id) {
+          await taskAPI.reject(taskId, userId);
+        }
+      } catch (error) {
+        console.warn('Backend rejection failed, using local:', error);
+      }
+      
       await updateTaskStatus(taskId, 'cancelled');
       return taskId;
     },
