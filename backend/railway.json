@@ -1,11 +1,5 @@
 {
   "$schema": "https://railway.app/railway.schema.json",
-  "$service": {
-    "source": {
-      "repo": "nandanreddy077-spec/steward",
-      "rootDirectory": "backend"
-    }
-  },
   "build": {
     "builder": "NIXPACKS",
     "buildCommand": "npm install && npm run build"
