@@ -2,15 +2,15 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy package files first for better caching
-COPY package*.json .npmrc ./
+# Copy package files first for better caching (from backend directory)
+COPY backend/package*.json backend/.npmrc ./
 
 # Install dependencies including devDependencies (needed for TypeScript)
 RUN npm install --legacy-peer-deps --include=dev
 
-# Copy source files
-COPY tsconfig.json ./
-COPY src/ ./src/
+# Copy source files (from backend directory)
+COPY backend/tsconfig.json ./
+COPY backend/src/ ./src/
 
 # Build TypeScript to dist/
 RUN npm run build
