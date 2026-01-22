@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { ParsedIntent } from '../types';
+import { ParsedIntent, TaskPreview } from '../types';
 
 // Lazy-load OpenAI client to ensure env vars are loaded
 function getOpenAIClient(): OpenAI {
@@ -239,7 +239,7 @@ export function getSafetyExplanation(intent: ParsedIntent, result: { success: bo
   return reasons;
 }
 
-export function generatePreview(intent: ParsedIntent, rawCommand: string) {
+export function generatePreview(intent: ParsedIntent, rawCommand: string): TaskPreview {
   const changes: Array<{
     type: 'create' | 'update' | 'delete' | 'send';
     entity: string;
