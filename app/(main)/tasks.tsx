@@ -19,6 +19,8 @@ import {
   Calendar,
   Mail,
   Utensils,
+  RefreshCw,
+  Shield,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useApp } from '@/store/AppContext';
@@ -45,7 +47,7 @@ const STATUS_CONFIG: Record<TaskStatus, { color: string; icon: typeof Clock; lab
 export default function TasksScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { tasks, pendingTasks, activeTasks, completedTasks } = useApp();
+  const { tasks, pendingTasks, activeTasks, completedTasks, retryTask } = useApp();
   const [filter, setFilter] = useState<FilterType>('all');
   const [refreshing, setRefreshing] = useState(false);
 
@@ -213,6 +215,23 @@ export default function TasksScreen() {
                   {`"${task.rawCommand}"`}
                 </Text>
 
+                {task.status === 'completed' && task.result?.success && task.result?.safetyReasons && task.result.safetyReasons.length > 0 && (
+                  <View style={styles.safetySection}>
+                    <View style={styles.safetyHeader}>
+                      <Shield size={14} color={Colors.dark.success} />
+                      <Text style={styles.safetyTitle}>Why this was safe</Text>
+                    </View>
+                    <View style={styles.safetyReasons}>
+                      {task.result.safetyReasons.map((reason, index) => (
+                        <View key={index} style={styles.safetyReasonItem}>
+                          <View style={styles.safetyBullet} />
+                          <Text style={styles.safetyReasonText}>{reason}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                )}
+
                 {task.result && (
                   <View
                     style={[
@@ -229,6 +248,20 @@ export default function TasksScreen() {
                       {task.result.message}
                     </Text>
                   </View>
+                )}
+
+                {task.status === 'failed' && (
+                  <TouchableOpacity
+                    style={styles.retryButton}
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                      retryTask(task.id);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <RefreshCw size={14} color={Colors.dark.info} />
+                    <Text style={styles.retryButtonText}>Retry</Text>
+                  </TouchableOpacity>
                 )}
               </TouchableOpacity>
             );
@@ -378,6 +411,24 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500' as const,
   },
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: Colors.dark.surfaceElevated,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: Colors.dark.borderLight,
+  },
+  retryButtonText: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+    color: Colors.dark.info,
+  },
   emptyState: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -403,5 +454,47 @@ const styles = StyleSheet.create({
     marginTop: 4,
     textAlign: 'center',
     paddingHorizontal: 40,
+  },
+  safetySection: {
+    marginTop: 12,
+    padding: 12,
+    backgroundColor: Colors.dark.surfaceElevated,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.dark.borderLight,
+  },
+  safetyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  safetyTitle: {
+    fontSize: 12,
+    fontWeight: '600' as const,
+    color: Colors.dark.text,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  safetyReasons: {
+    gap: 6,
+  },
+  safetyReasonItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  safetyBullet: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.dark.success,
+    marginTop: 6,
+  },
+  safetyReasonText: {
+    flex: 1,
+    fontSize: 13,
+    color: Colors.dark.textSecondary,
+    lineHeight: 18,
   },
 });

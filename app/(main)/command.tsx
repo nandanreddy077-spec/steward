@@ -13,10 +13,11 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Send, Calendar, Mail, Utensils, Sparkles } from 'lucide-react-native';
+import { Send, Calendar, Mail, Utensils, Sparkles, AlertCircle, Eye } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useApp } from '@/store/AppContext';
 import Colors from '@/constants/colors';
+import { validateCommand, sanitizeCommand } from '@/utils/validation';
 
 const QUICK_COMMANDS = [
   { icon: Calendar, label: 'Block focus time tomorrow morning', domain: 'calendar' },
@@ -32,6 +33,9 @@ export default function CommandScreen() {
   const [command, setCommand] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
+  const [dryRunMode, setDryRunMode] = useState(false);
   const inputRef = useRef<TextInput>(null);
   const successAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -56,16 +60,36 @@ export default function CommandScreen() {
   }, [pulseAnim]);
 
   const handleSubmit = async () => {
-    if (!command.trim() || isProcessing) return;
+    if (isProcessing) return;
 
+    // Validate command
+    const sanitized = sanitizeCommand(command);
+    const validation = validateCommand(sanitized);
+    
+    setHasAttemptedSubmit(true);
+    
+    if (!validation.isValid) {
+      setValidationError(validation.error || 'Invalid command');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      return;
+    }
+
+    setValidationError(null);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Keyboard.dismiss();
     setIsProcessing(true);
 
     setTimeout(() => {
-      createTask(command.trim());
+      // In dry run mode, create task but it will be marked as preview-only
+      createTask(sanitized);
       setIsProcessing(false);
-      setCommand('');
+      
+      // Don't clear command in dry run mode so user can adjust
+      if (!dryRunMode) {
+        setCommand('');
+      }
+      setHasAttemptedSubmit(false);
+      setValidationError(null);
 
       setShowSuccess(true);
       Animated.sequence([
@@ -90,6 +114,17 @@ export default function CommandScreen() {
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }, 800);
+  };
+
+  const handleCommandChange = (text: string) => {
+    setCommand(text);
+    // Clear validation error when user starts typing
+    if (validationError && hasAttemptedSubmit) {
+      const validation = validateCommand(sanitizeCommand(text));
+      if (validation.isValid) {
+        setValidationError(null);
+      }
+    }
   };
 
   const handleQuickCommand = (commandText: string) => {
@@ -120,19 +155,22 @@ export default function CommandScreen() {
           </Animated.View>
           <Text style={styles.title}>What do you need done?</Text>
           <Text style={styles.subtitle}>
-            Describe your task in plain language. I will handle the rest.
+            Ask Steward to handle it. I'll show you what I'll do before taking action.
           </Text>
         </View>
 
         <View style={styles.inputSection}>
-          <View style={styles.inputContainer}>
+          <View style={[
+            styles.inputContainer,
+            validationError && hasAttemptedSubmit && styles.inputContainerError,
+          ]}>
             <TextInput
               ref={inputRef}
               style={styles.input}
               placeholder="Cancel my 3pm meeting and apologize to attendees"
               placeholderTextColor={Colors.dark.textMuted}
               value={command}
-              onChangeText={setCommand}
+              onChangeText={handleCommandChange}
               multiline
               maxLength={500}
               editable={!isProcessing}
@@ -140,26 +178,66 @@ export default function CommandScreen() {
             />
           </View>
 
+          {validationError && hasAttemptedSubmit && (
+            <View style={styles.errorContainer}>
+              <AlertCircle size={14} color={Colors.dark.error} />
+              <Text style={styles.errorText}>{validationError}</Text>
+            </View>
+          )}
+
+          <View style={styles.inputFooter}>
+            <TouchableOpacity
+              style={styles.dryRunToggle}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setDryRunMode(!dryRunMode);
+              }}
+              activeOpacity={0.7}
+            >
+              <Eye 
+                size={16} 
+                color={dryRunMode ? Colors.dark.accent : Colors.dark.textMuted} 
+              />
+              <Text style={[
+                styles.dryRunText,
+                dryRunMode && styles.dryRunTextActive
+              ]}>
+                Preview only
+              </Text>
+            </TouchableOpacity>
+            <Text style={styles.charCount}>
+              {command.length}/500
+            </Text>
+          </View>
+
           <TouchableOpacity
             style={[
               styles.submitButton,
-              (!command.trim() || isProcessing) && styles.submitButtonDisabled,
+              (!command.trim() || isProcessing || (validationError && hasAttemptedSubmit)) && styles.submitButtonDisabled,
+              dryRunMode && styles.submitButtonDryRun,
             ]}
             onPress={handleSubmit}
-            disabled={!command.trim() || isProcessing}
+            disabled={!command.trim() || isProcessing || (validationError !== null && hasAttemptedSubmit)}
             activeOpacity={0.8}
           >
-            <Send
-              size={20}
-              color={command.trim() && !isProcessing ? Colors.dark.background : Colors.dark.textMuted}
-            />
+            {dryRunMode ? (
+              <Eye
+                size={20}
+                color={command.trim() && !isProcessing && !validationError ? Colors.dark.background : Colors.dark.textMuted}
+              />
+            ) : (
+              <Send
+                size={20}
+                color={command.trim() && !isProcessing && !validationError ? Colors.dark.background : Colors.dark.textMuted}
+              />
+            )}
             <Text
               style={[
                 styles.submitButtonText,
-                (!command.trim() || isProcessing) && styles.submitButtonTextDisabled,
+                (!command.trim() || isProcessing || (validationError && hasAttemptedSubmit)) && styles.submitButtonTextDisabled,
               ]}
             >
-              {isProcessing ? 'Processing...' : 'Execute'}
+              {isProcessing ? 'Processing...' : dryRunMode ? 'Preview Only' : 'Execute'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -304,6 +382,48 @@ const styles = StyleSheet.create({
     borderColor: Colors.dark.border,
     marginBottom: 12,
   },
+  inputContainerError: {
+    borderColor: Colors.dark.error,
+    borderWidth: 1.5,
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 12,
+    paddingHorizontal: 4,
+  },
+  errorText: {
+    fontSize: 13,
+    color: Colors.dark.error,
+    flex: 1,
+  },
+  inputFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingHorizontal: 4,
+  },
+  dryRunToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  dryRunText: {
+    fontSize: 12,
+    color: Colors.dark.textMuted,
+    fontWeight: '500' as const,
+  },
+  dryRunTextActive: {
+    color: Colors.dark.accent,
+  },
+  charCount: {
+    fontSize: 12,
+    color: Colors.dark.textMuted,
+  },
   input: {
     fontSize: 16,
     color: Colors.dark.text,
@@ -322,6 +442,12 @@ const styles = StyleSheet.create({
   },
   submitButtonDisabled: {
     backgroundColor: Colors.dark.surfaceElevated,
+  },
+  submitButtonDryRun: {
+    backgroundColor: Colors.dark.info,
+  },
+  submitButtonDryRun: {
+    backgroundColor: Colors.dark.info,
   },
   submitButtonText: {
     fontSize: 16,

@@ -1,8 +1,14 @@
 import { Platform } from 'react-native';
 
-// Use local network IP for mobile devices, localhost for web
-// Replace 192.168.0.103 with your actual local IP (run: ifconfig | grep "inet " | grep -v 127.0.0.1)
+// API Base URL Configuration
+// For production, set EXPO_PUBLIC_API_URL environment variable
+// Example: EXPO_PUBLIC_API_URL=https://your-app.up.railway.app/api
 const getApiBaseUrl = () => {
+  // Check for production API URL from environment variable
+  if (process.env.EXPO_PUBLIC_API_URL) {
+    return process.env.EXPO_PUBLIC_API_URL;
+  }
+
   if (__DEV__) {
     // For mobile devices/simulators, use your local network IP
     // For web, use localhost
@@ -11,7 +17,9 @@ const getApiBaseUrl = () => {
       ? 'http://localhost:3001/api'
       : 'http://192.168.0.103:3001/api'; // Replace with your local IP
   }
-  return 'https://your-production-api.com/api'; // Update for production
+  
+  // Fallback for production (should be set via EXPO_PUBLIC_API_URL)
+  return 'https://your-app-name.up.railway.app/api'; // Update this with your Railway URL
 };
 
 const API_BASE_URL = getApiBaseUrl();
@@ -19,82 +27,44 @@ const API_BASE_URL = getApiBaseUrl();
 export interface ApiResponse<T> {
   data?: T;
   error?: string;
-  needsReauth?: boolean;
 }
 
 async function fetchAPI<T>(
   endpoint: string,
-  options: RequestInit = {},
-  retries = 3
+  options: RequestInit = {}
 ): Promise<ApiResponse<T>> {
-  let lastError: any;
-  
-  for (let i = 0; i < retries; i++) {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000);
-      
-      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-        ...options,
-        headers: {
-          'Content-Type': 'application/json',
-          ...options.headers,
-        },
-        signal: controller.signal,
-      });
-      
-      clearTimeout(timeoutId);
+  try {
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
+    });
 
-      const data = await response.json();
+    const data = await response.json();
 
-      if (!response.ok) {
-        const errorMessage = data.error || 'Request failed';
-        
-        if (response.status === 401 && data.needsReauth) {
-          return { error: errorMessage, needsReauth: true } as any;
-        }
-        
-        if (response.status >= 500 && i < retries - 1) {
-          await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
-          continue;
-        }
-        
-        return { error: errorMessage };
-      }
-
-      return { data };
-    } catch (error: any) {
-      lastError = error;
-      console.error(`API Error (attempt ${i + 1}/${retries}):`, error);
-      
-      if (error.name === 'AbortError') {
-        if (i < retries - 1) {
-          await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
-          continue;
-        }
-        return { error: 'Request timeout. Please check your connection.' };
-      }
-      
-      if (i < retries - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
-        continue;
-      }
+    if (!response.ok) {
+      return { error: data.error || 'Request failed' };
     }
+
+    return { data };
+  } catch (error) {
+    console.error('API Error:', error);
+    return { error: 'Network error' };
   }
-  
-  return { error: lastError?.message || 'Network error. Please check your connection.' };
 }
 
 // Task API
 export const taskAPI = {
-  parse: async (command: string) => {
+  parse: async (command: string, userId?: string) => {
     return fetchAPI<{
       intent: any;
       requiresApproval: boolean;
       preview?: any;
     }>('/tasks/parse', {
       method: 'POST',
-      body: JSON.stringify({ command }),
+      body: JSON.stringify({ command, userId }),
     });
   },
 
@@ -118,10 +88,10 @@ export const taskAPI = {
     });
   },
 
-  approve: async (taskId: string, userId: string) => {
+  approve: async (taskId: string, userId: string, selectedEmailId?: string) => {
     return fetchAPI<{ task: any }>('/tasks/approve', {
       method: 'POST',
-      body: JSON.stringify({ taskId, userId }),
+      body: JSON.stringify({ taskId, userId, selectedEmailId }),
     });
   },
 

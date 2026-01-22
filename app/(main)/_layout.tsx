@@ -25,7 +25,7 @@ export default function MainLayout() {
       <Tabs.Screen
         name="command"
         options={{
-          title: 'Command',
+          title: 'Request',
           tabBarIcon: ({ color, size }) => <Send size={size - 2} color={color} strokeWidth={2} />,
         }}
       />

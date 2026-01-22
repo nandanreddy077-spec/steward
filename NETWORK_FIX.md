@@ -105,3 +105,7 @@ If network connection doesn't work, use ngrok to tunnel:
 2. Check firewall settings
 3. Test with: `curl http://192.168.0.103:3001/health`
 
+
+
+
+

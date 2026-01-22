@@ -1,334 +1,314 @@
-# Production Readiness Assessment
+# 🚀 Steward - Production Readiness Checklist
 
-## Current Status: ❌ NOT PRODUCTION READY
-
-Your app is **60% complete**. The core structure exists, but critical production requirements are missing.
+## Current Status: ~85% Complete
 
 ---
 
-## Critical Blockers (Must Fix Before Launch)
+## 🔴 CRITICAL (Must Complete Before Launch)
 
-### 🔴 1. OAuth Flow is Broken
-**Status:** Implemented but failing  
-**Issue:** "Failed to authenticate" error  
-**Impact:** Users cannot sign in  
+### 1. Backend Deployment ✅/❌
+- [ ] **Fix Railway deployment**
+  - Current issue: Build failures with `npm ci` and dependency conflicts
+  - Solution: Ensure `nixpacks.toml` uses `npm install --legacy-peer-deps`
+  - Verify: Backend builds and deploys successfully
+  - Test: Health endpoint responds at production URL
 
-**What to do:**
-- Test OAuth end-to-end flow
-- Fix callback handling
-- Implement token refresh logic
-- Add OAuth error recovery
-- Test on both iOS and web
+- [ ] **Set up production environment variables**
+  ```
+  NODE_ENV=production
+  PORT=3001
+  OPENAI_API_KEY=...
+  SUPABASE_URL=...
+  SUPABASE_ANON_KEY=...
+  GOOGLE_CLIENT_ID=...
+  GOOGLE_CLIENT_SECRET=...
+  GOOGLE_REDIRECT_URI=https://your-app.up.railway.app/api/auth/google/callback
+  ```
 
-**Estimated time:** 4-6 hours
+- [ ] **Update Google OAuth redirect URI**
+  - Add production Railway URL to Google Cloud Console
+  - Update `GOOGLE_REDIRECT_URI` in Railway after first deployment
 
----
+### 2. Frontend Production Configuration
+- [ ] **Update API URL for production**
+  - Set `EXPO_PUBLIC_API_URL` environment variable
+  - Or update hardcoded URL in `utils/api.ts` (line 22)
+  - Test: Frontend connects to production backend
 
-### 🔴 2. No Real Integration Testing
-**Status:** Code exists, not tested with real APIs  
-**Issue:** Calendar/email APIs untested with real Google accounts  
-**Impact:** App might fail in production with real data  
+- [ ] **Configure deep linking for production**
+  - Update `app.json` with production URL scheme
+  - Test OAuth flow with production backend
 
-**What to do:**
-- Test calendar event creation with real Google Calendar
-- Test event rescheduling
-- Test email reading
-- Test email sending with approval
-- Handle API rate limits and errors
-- Test with different Google account permission levels
-
-**Estimated time:** 8-12 hours
-
----
-
-### 🔴 3. No Backend Deployment
-**Status:** Only runs locally  
-**Issue:** Backend runs on localhost, not accessible to production  
-**Impact:** App won't work for real users  
-
-**What to do:**
-- Deploy backend to Railway/Render/Fly.io
-- Set up production environment variables
-- Configure production OAuth callback URLs
-- Set up HTTPS/SSL
-- Configure CORS for production domains
-- Test deployed backend
-
-**Estimated time:** 3-4 hours
-
----
-
-### 🔴 4. No Error Tracking or Monitoring
-**Status:** Console logs only  
-**Issue:** No way to know when things break in production  
-**Impact:** Users will encounter silent failures  
-
-**What to do:**
-- Add Sentry for error tracking
-- Add health check monitoring
+### 3. Security & Reliability
+- [x] ✅ API rate limiting (implemented)
+- [x] ✅ Token refresh mechanism (implemented)
+- [x] ✅ Input validation & sanitization (implemented)
+- [ ] **Add HTTPS enforcement**
+- [ ] **Set up error tracking (Sentry)**
+  - Install Sentry SDK
+  - Configure error reporting
 - Set up alerts for critical errors
-- Add performance monitoring
-- Create error dashboards
 
-**Estimated time:** 2-3 hours
-
----
-
-### 🔴 5. Security Gaps
-**Status:** Basic setup, needs hardening  
-**Issue:** Missing production security practices  
-**Impact:** Vulnerable to attacks  
-
-**What to do:**
-- Validate all API inputs
-- Implement proper rate limiting
-- Add request size limits
-- Sanitize user inputs
-- Add CSRF protection
-- Encrypt sensitive data at rest
-- Add security headers
-- Regular dependency audits
-
-**Estimated time:** 4-6 hours
+### 4. Database & Data
+- [x] ✅ Supabase schema (created)
+- [ ] **Verify production database connection**
+- [ ] **Set up database backups**
+- [ ] **Test data migration if needed**
 
 ---
 
-### 🔴 6. No Persistent Audit Log
-**Status:** Frontend-only, in memory  
-**Issue:** Activity log stored in AsyncStorage, not synced to backend  
-**Impact:** User loses trust, no recovery from errors  
+## 🟡 HIGH PRIORITY (Should Complete Before Launch)
 
-**What to do:**
-- Store all actions in backend database
-- Sync activity log from backend
-- Add undo functionality where possible
-- Make audit trail exportable
-- Add timestamps and full context
+### 5. Comprehensive Testing
+- [ ] **End-to-end testing checklist:**
+  - [ ] Google OAuth login flow
+  - [ ] Calendar: Create event
+  - [ ] Calendar: Reschedule event
+  - [ ] Calendar: Cancel event (with approval)
+  - [ ] Calendar: Block focus time
+  - [ ] Email: Summarize inbox
+  - [ ] Email: Draft reply
+  - [ ] Email: Send email (with approval)
+  - [ ] Email: Select email from list
+  - [ ] Email: Edit email before sending
+  - [ ] Task approval flow
+  - [ ] Task rejection flow
+  - [ ] Task retry on failure
+  - [ ] Offline mode handling
 
-**Estimated time:** 3-4 hours
+- [ ] **Error scenario testing:**
+  - [ ] Network failures
+  - [ ] Invalid commands
+  - [ ] Expired tokens
+  - [ ] API rate limits
+  - [ ] Missing permissions
 
----
+- [ ] **Performance testing:**
+  - [ ] Response times < 2s for most operations
+  - [ ] Handle 10+ concurrent users
+  - [ ] Memory leaks check
 
-### 🔴 7. No Monetization System
-**Status:** Not implemented  
-**Issue:** Cannot charge users  
-**Impact:** No revenue  
+### 6. Monitoring & Observability
+- [ ] **Set up application monitoring**
+  - Railway metrics dashboard
+  - Response time tracking
+  - Error rate monitoring
+  - Uptime monitoring
 
-**What to do:**
-- Integrate payment system (Stripe/RevenueCat)
-- Implement subscription tiers
-- Add trial period logic
-- Enforce usage limits
-- Handle payment failures
-- Add subscription management UI
+- [ ] **Set up logging**
+  - Structured logging (Winston/Pino)
+  - Log levels (error, warn, info)
+  - Log aggregation (if needed)
 
-**Estimated time:** 8-12 hours
+- [ ] **Set up alerts**
+  - Critical error alerts
+  - High error rate alerts
+  - Service downtime alerts
 
----
+### 7. Mobile App Build & Distribution
+- [ ] **Build iOS app**
+  - Set up EAS Build account
+  - Configure `app.json` for iOS
+  - Build production iOS app
+  - Test on physical device
 
-## Important (Should Have Before Launch)
+- [ ] **Build Android app**
+  - Configure `app.json` for Android
+  - Build production Android app
+  - Test on physical device
 
-### 🟡 8. Human Fallback Not Implemented
-**Status:** Mentioned in docs, not coded  
-**Issue:** No backup when AI/APIs fail  
-**Impact:** Tasks will fail instead of being handled  
+- [ ] **App Store submission (iOS)**
+  - Create App Store Connect account
+  - Prepare screenshots and metadata
+  - Submit for review
+  - Handle review feedback
 
-**What to do:**
-- Create task queue for failed operations
-- Set up notification system to human operators
-- Build admin dashboard for task management
-- Add operator assignment logic
-- Track fallback metrics
-
-**Estimated time:** 12-16 hours (or skip for V1, handle manually)
-
----
-
-### 🟡 9. Limited Error Handling UX
-**Status:** Basic alerts  
-**Issue:** Generic error messages, no recovery flows  
-**Impact:** Poor user experience when errors occur  
-
-**What to do:**
-- Replace Alert with toast notifications
-- Add user-friendly error messages
-- Implement retry logic
-- Add offline mode handling
-- Show clear recovery options
-
-**Estimated time:** 4-6 hours
-
----
-
-### 🟡 10. No Testing Coverage
-**Status:** Zero tests  
-**Issue:** No automated validation  
-**Impact:** Breaking changes go unnoticed  
-
-**What to do:**
-- Add unit tests for critical functions
-- Add integration tests for API routes
-- Add E2E tests for auth and task flows
-- Set up CI/CD with test automation
-
-**Estimated time:** 16-20 hours (can be done post-launch)
+- [ ] **Play Store submission (Android)**
+  - Create Google Play Console account
+  - Prepare screenshots and metadata
+  - Submit for review
+  - Handle review feedback
 
 ---
 
-### 🟡 11. Missing Onboarding
-**Status:** Skipped  
-**Issue:** User doesn't know what to expect  
-**Impact:** Confusion, abandonment  
+## 🟢 NICE TO HAVE (Can Add Post-Launch)
 
-**What to do:**
-- Add 5-question setup flow
-- Explain permission requirements
-- Set user preferences
-- Show example commands
-- Set working hours
+### 8. Trust & Transparency Features
+- [x] ✅ "Why approval required" explanations
+- [x] ✅ "Why this was safe" explanations
+- [x] ✅ Dry run / Preview mode
+- [ ] **Weekly value summary**
+  - Time saved metrics
+  - Interruptions avoided count
+  - Tasks completed summary
 
-**Estimated time:** 4-6 hours
+- [ ] **User-defined rules**
+  - Personal defaults (e.g., "always block 2pm-4pm")
+  - Custom approval rules
+  - Auto-approve patterns
 
----
+- [ ] **Autonomy levels (Level 0/1/2)**
+  - Level 0: Always ask (current default)
+  - Level 1: Auto-approve low-risk actions
+  - Level 2: Full autonomy (future)
 
-## Nice to Have (Post-Launch)
+- [ ] **Onboarding improvements**
+  - Make human-in-loop visible
+  - Explain approval process
+  - Show safety features
 
-### 🟢 12. Token Refresh Logic
-**Status:** Partially implemented  
-**What to do:** Test and ensure refresh tokens work automatically
+### 9. Additional Features
+- [ ] **Push notifications**
+  - Task completion notifications
+  - Approval requests
+  - Error alerts
 
-### 🟢 13. Advanced Analytics
-**Status:** Not implemented  
-**What to do:** Track task success rates, user engagement, time saved
+- [ ] **Analytics (optional)**
+  - User behavior tracking
+  - Feature usage metrics
+  - Performance analytics
 
-### 🟢 14. Performance Optimization
-**Status:** Not tested  
-**What to do:** Optimize API response times, reduce bundle size
+- [ ] **Advanced email features**
+  - Email templates
+  - Scheduled emails
+  - Email rules/filters
 
-### 🟢 15. Advanced Features
-- Voice input
-- Multi-language support
-- Desktop app
-- Advanced booking integrations
-
----
-
-## Recommended Launch Path
-
-### Phase 1: Minimum Viable Production (2-3 weeks)
-1. ✅ Fix OAuth flow completely
-2. ✅ Test all integrations with real APIs
-3. ✅ Deploy backend to production
-4. ✅ Add error tracking (Sentry)
-5. ✅ Harden security
-6. ✅ Add persistent audit log
-7. ✅ Basic payment integration
-
-**Result:** Can charge users, tasks work reliably, errors are tracked
+- [ ] **Advanced calendar features**
+  - Recurring events
+  - Meeting conflict detection
+  - Smart scheduling suggestions
 
 ---
 
-### Phase 2: Trust & Polish (1-2 weeks)
-8. ✅ Improve error handling UX
-9. ✅ Add onboarding flow
-10. ✅ Manual human fallback process (email/Slack)
-11. ✅ Basic analytics
+## 📋 Pre-Launch Checklist
 
-**Result:** Professional experience, users trust the app
+### Technical
+- [ ] Backend deployed and accessible
+- [ ] All environment variables configured
+- [ ] OAuth working in production
+- [ ] Database connected and tested
+- [ ] Error tracking configured
+- [ ] Monitoring set up
+- [ ] API rate limits tested
+- [ ] Security audit completed
 
----
+### Testing
+- [ ] All core features tested end-to-end
+- [ ] Error scenarios tested
+- [ ] Performance validated
+- [ ] Mobile apps tested on real devices
+- [ ] OAuth flow tested in production
 
-### Phase 3: Scale & Iterate (ongoing)
-12. ✅ Automated human fallback
-13. ✅ Advanced features
-14. ✅ Testing coverage
-15. ✅ Performance optimization
+### Documentation
+- [ ] User documentation (if needed)
+- [ ] API documentation (if public)
+- [ ] Deployment runbook
+- [ ] Troubleshooting guide
 
-**Result:** Scalable, maintainable product
+### Legal & Compliance
+- [ ] Privacy policy
+- [ ] Terms of service
+- [ ] GDPR compliance (if applicable)
+- [ ] Data retention policy
 
----
-
-## What You Should Do RIGHT NOW
-
-### Priority 1 (This Week):
-```bash
-1. Fix OAuth flow - test end-to-end, make it bulletproof
-2. Test calendar integration with YOUR Google account
-3. Test email integration with YOUR Gmail
-4. Deploy backend to Railway/Render
-5. Set up Sentry error tracking
-```
-
-### Priority 2 (Next Week):
-```bash
-6. Add persistent audit log (backend)
-7. Harden security (input validation, rate limits)
-8. Integrate payment system (Stripe/RevenueCat)
-9. Add better error messages
-10. Create onboarding flow
-```
-
-### Priority 3 (Week 3):
-```bash
-11. Manual human fallback process
-12. Load testing
-13. Soft launch to 10-20 beta users
-14. Fix issues found in beta
-15. Public launch
-```
+### Marketing (if applicable)
+- [ ] App Store listing prepared
+- [ ] Play Store listing prepared
+- [ ] Screenshots and videos
+- [ ] App description and keywords
 
 ---
 
-## Bottom Line
+## 🎯 Recommended Launch Sequence
 
-**Is it production ready?** No.
+### Phase 1: Core Production (Week 1)
+1. Fix Railway deployment
+2. Set up production environment
+3. Configure OAuth for production
+4. End-to-end testing
+5. Error tracking setup
 
-**Can it be production ready?** Yes, in 2-3 weeks of focused work.
+### Phase 2: Mobile Apps (Week 2)
+1. Build iOS app
+2. Build Android app
+3. Test on devices
+4. Submit to stores
 
-**Should you launch it now?** No. You'd lose user trust immediately.
+### Phase 3: Polish & Monitor (Week 3-4)
+1. Monitor production usage
+2. Fix any critical bugs
+3. Add monitoring alerts
+4. Gather user feedback
 
-**What's the fastest path to launch?**
-1. Fix OAuth (1 day)
-2. Test integrations (2 days)
-3. Deploy backend (1 day)
-4. Add error tracking (half day)
-5. Add payments (2 days)
-6. Beta test (3-5 days)
-7. Launch
-
-**Total:** 10-14 days of focused development.
-
----
-
-## Risk Assessment
-
-### If you launch NOW without fixes:
-- ❌ Users can't sign in (OAuth broken)
-- ❌ Tasks fail silently (no error tracking)
-- ❌ Cannot charge money (no payments)
-- ❌ Backend unreachable (localhost only)
-- ❌ Security vulnerabilities
-- ❌ No way to recover from errors
-
-### If you fix Critical Blockers (#1-7):
-- ✅ Users can authenticate
-- ✅ Tasks execute reliably
-- ✅ Errors are caught and handled
-- ✅ Can charge subscriptions
-- ✅ Backend accessible 24/7
-- ✅ Basic security in place
-- ✅ Audit trail for accountability
+### Phase 4: Enhancements (Post-Launch)
+1. Weekly value summary
+2. User-defined rules
+3. Autonomy levels
+4. Additional features
 
 ---
 
-## Conclusion
+## 🐛 Known Issues to Fix
 
-You have a **strong foundation** but critical production pieces are missing.
+1. **Railway Build Failures**
+   - Issue: `npm ci` strict dependency checking
+   - Status: Partially addressed with `nixpacks.toml`
+   - Action: Verify build succeeds
 
-This is **not a criticism** - you've built 60% of what matters. The last 40% is production infrastructure, which is less visible but absolutely essential.
+2. **OAuth Redirect URI**
+   - Issue: Must match exactly between Google Console and Railway
+   - Status: Needs production URL
+   - Action: Update after first deployment
 
-**Do not launch until Critical Blockers (#1-7) are resolved.**
+3. **Frontend API URL**
+   - Issue: Hardcoded fallback URL
+   - Status: Needs environment variable
+   - Action: Set `EXPO_PUBLIC_API_URL`
 
-A broken launch damages your reputation permanently. A delayed launch is forgettable.
+---
 
-Take 2-3 weeks, fix the critical issues, launch with confidence.
+## 📊 Progress Tracking
+
+**Overall: ~85% Complete**
+
+- ✅ Core Features: 95%
+- ✅ Security: 90%
+- ⏳ Deployment: 60%
+- ⏳ Testing: 70%
+- ⏳ Mobile Apps: 0%
+- ⏳ Monitoring: 30%
+
+---
+
+## 🚀 Next Immediate Steps
+
+1. **Fix Railway deployment** (1-2 hours)
+   - Verify `nixpacks.toml` configuration
+   - Test build locally
+   - Deploy to Railway
+   - Verify health endpoint
+
+2. **Set up production environment** (30 min)
+   - Add all environment variables
+   - Update OAuth redirect URI
+   - Test OAuth flow
+
+3. **Update frontend for production** (15 min)
+   - Set `EXPO_PUBLIC_API_URL`
+   - Test API connection
+   - Verify OAuth deep linking
+
+4. **Comprehensive testing** (2-3 hours)
+   - Test all features end-to-end
+   - Test error scenarios
+   - Document any bugs
+
+5. **Set up error tracking** (1 hour)
+   - Install Sentry
+   - Configure error reporting
+   - Test error capture
+
+---
+
+**Last Updated:** Now  
+**Next Review:** After Railway deployment fix

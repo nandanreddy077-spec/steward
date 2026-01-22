@@ -1,5 +1,6 @@
 import { google } from 'googleapis';
 import { GoogleTokens } from '../types';
+import { getValidTokens } from '../utils/tokenRefresh';
 
 export function getCalendarClient(tokens: GoogleTokens) {
   const oauth2Client = new google.auth.OAuth2(
@@ -10,6 +11,17 @@ export function getCalendarClient(tokens: GoogleTokens) {
 
   oauth2Client.setCredentials(tokens);
   return google.calendar({ version: 'v3', auth: oauth2Client });
+}
+
+/**
+ * Gets calendar client with auto-refreshed tokens
+ */
+export async function getCalendarClientWithRefresh(
+  userId: string,
+  tokens: GoogleTokens
+) {
+  const validTokens = await getValidTokens(userId, tokens);
+  return getCalendarClient(validTokens);
 }
 
 export async function listEvents(tokens: GoogleTokens, maxResults: number = 10) {
@@ -36,16 +48,20 @@ export async function createEvent(
 ) {
   const calendar = getCalendarClient(tokens);
 
+  // Use UTC timezone or detect from startTime
+  // If startTime is ISO string, it should include timezone info
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+
   const event = {
     summary,
     description,
     start: {
       dateTime: startTime,
-      timeZone: 'America/Los_Angeles', // TODO: Get from user settings
+      timeZone: timeZone,
     },
     end: {
       dateTime: endTime,
-      timeZone: 'America/Los_Angeles',
+      timeZone: timeZone,
     },
   };
 
@@ -78,16 +94,17 @@ export async function updateEvent(
   // Update fields
   if (updates.summary) event.data.summary = updates.summary;
   if (updates.description) event.data.description = updates.description;
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
   if (updates.start) {
     event.data.start = {
       dateTime: updates.start,
-      timeZone: event.data.start?.timeZone || 'America/Los_Angeles',
+      timeZone: event.data.start?.timeZone || timeZone,
     };
   }
   if (updates.end) {
     event.data.end = {
       dateTime: updates.end,
-      timeZone: event.data.end?.timeZone || 'America/Los_Angeles',
+      timeZone: event.data.end?.timeZone || timeZone,
     };
   }
 
@@ -141,4 +158,5 @@ export async function findEventByTime(
 
   return null;
 }
+
 

@@ -158,6 +158,87 @@ export function requiresApproval(intent: ParsedIntent): boolean {
   return false;
 }
 
+/**
+ * Generates reasons why approval is required for a task
+ */
+export function getApprovalReasons(intent: ParsedIntent): string[] {
+  const reasons: string[] = [];
+  
+  if (intent.action === 'cancel_meeting') {
+    reasons.push('Irreversible change');
+    reasons.push('External notification (attendees will be notified)');
+  }
+  
+  if (intent.action === 'send_email') {
+    reasons.push('External email');
+    reasons.push('Irreversible once sent');
+  }
+  
+  if (intent.domain === 'booking') {
+    reasons.push('Payment may be involved');
+    reasons.push('Cancellation policy may apply');
+  }
+  
+  if (!intent.isReversible) {
+    reasons.push('Irreversible action');
+  }
+  
+  if (intent.confidence < 0.7) {
+    reasons.push(`Low confidence (${Math.round(intent.confidence * 100)}%)`);
+  }
+  
+  // If no specific reasons, add generic one
+  if (reasons.length === 0) {
+    reasons.push('Requires your confirmation');
+  }
+  
+  return reasons;
+}
+
+/**
+ * Generates safety explanation for why a completed task was safe
+ */
+export function getSafetyExplanation(intent: ParsedIntent, result: { success: boolean }): string[] {
+  const reasons: string[] = [];
+  
+  if (intent.isReversible) {
+    reasons.push('Reversible action');
+  }
+  
+  if (intent.domain === 'calendar' && intent.action !== 'send_email') {
+    reasons.push('Internal calendar change only');
+  }
+  
+  if (intent.confidence >= 0.8) {
+    reasons.push(`High confidence (${Math.round(intent.confidence * 100)}%)`);
+  } else if (intent.confidence >= 0.7) {
+    reasons.push(`Moderate confidence (${Math.round(intent.confidence * 100)}%)`);
+  }
+  
+  if (intent.domain !== 'booking') {
+    reasons.push('No payment involved');
+  }
+  
+  if (intent.action === 'block_time' || intent.action === 'schedule_meeting') {
+    reasons.push('Creating new event (no existing data modified)');
+  }
+  
+  if (intent.action === 'summarize_inbox') {
+    reasons.push('Read-only operation');
+  }
+  
+  if (result.success) {
+    reasons.push('Executed successfully');
+  }
+  
+  // If no specific reasons, add generic one
+  if (reasons.length === 0) {
+    reasons.push('Action completed as expected');
+  }
+  
+  return reasons;
+}
+
 export function generatePreview(intent: ParsedIntent, rawCommand: string) {
   const changes: Array<{
     type: 'create' | 'update' | 'delete' | 'send';
@@ -202,13 +283,33 @@ export function generatePreview(intent: ParsedIntent, rawCommand: string) {
       break;
 
     case 'send_email':
+    case 'reply_email':
+      const emailTo = intent.entities.to || intent.entities.recipient || 'recipient';
+      const emailSubject = intent.entities.subject || 'No Subject';
+      const emailBody = intent.entities.body || intent.entities.message || '';
+      
       changes.push({
         type: 'send',
         entity: 'Email',
-        detail: 'Send email to recipient',
+        detail: `To: ${emailTo}`,
       });
+      
+      // Include email preview if we have the content
+      const emailPreview = emailTo && emailSubject ? {
+        to: emailTo,
+        subject: emailSubject,
+        body: emailBody,
+      } : undefined;
+      
       warnings.push('This action cannot be undone once sent.');
-      break;
+      
+      return {
+        title: intent.description,
+        description: rawCommand,
+        changes,
+        warnings: warnings.length > 0 ? warnings : undefined,
+        emailPreview,
+      };
 
     case 'book_restaurant':
       changes.push({

@@ -1,7 +1,8 @@
+// Load environment variables FIRST, before any other imports
 import dotenv from 'dotenv';
 dotenv.config();
 
-import express, { Request, Response, NextFunction } from 'express';
+import express from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import taskRoutes from './routes/tasks';
@@ -11,29 +12,51 @@ import calendarRoutes from './routes/calendar';
 const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
 
-const limiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10),
-  max: parseInt(process.env.API_RATE_LIMIT || '100', 10),
-  message: { error: 'Too many requests, please try again later' },
+// Rate limiting middleware
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per windowMs
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+});
+
+const strictLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // Limit each IP to 10 requests per windowMs for sensitive operations
+  message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
 });
 
+// CORS configuration
+const allowedOrigins = process.env.NODE_ENV === 'production'
+  ? [
+      // Production origins - add your production frontend URLs here
+      process.env.FRONTEND_URL || 'https://your-frontend-domain.com',
+      /^https:\/\/.*\.expo\.dev$/, // Expo production URLs
+      /^exp:\/\/.*$/, // Expo deep links
+    ]
+  : [
+      // Development origins
+      'http://localhost:8081', 
+      'http://localhost:19006', 
+      'exp://localhost:8081',
+      /^http:\/\/192\.168\.\d+\.\d+:8081$/, // Allow local network IPs for Expo
+      /^http:\/\/192\.168\.\d+\.\d+:19006$/,
+    ];
+
 app.use(cors({
-  origin: [
-    'http://localhost:8081', 
-    'http://localhost:19006', 
-    'exp://localhost:8081',
-    /^http:\/\/192\.168\.\d+\.\d+:8081$/,
-    /^http:\/\/192\.168\.\d+\.\d+:19006$/,
-  ],
+  origin: allowedOrigins,
   credentials: true,
 }));
 app.use(express.json());
-app.use('/api/', limiter);
+
+// Apply general rate limiting to all routes
+app.use('/api', generalLimiter);
 
 // Health check
-app.get('/health', (req: Request, res: Response) => {
+app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
@@ -46,13 +69,10 @@ app.use('/api/tasks', taskRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/calendar', calendarRoutes);
 
-app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+// Error handling middleware
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error('Error:', err);
-  const isDev = process.env.NODE_ENV === 'development';
-  res.status(err.status || 500).json({ 
-    error: err.message || 'Internal server error',
-    ...(isDev && { stack: err.stack, details: err })
-  });
+  res.status(500).json({ error: 'Internal server error' });
 });
 
 app.listen(PORT, '0.0.0.0', () => {

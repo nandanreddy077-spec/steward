@@ -17,6 +17,7 @@ import {
   Mail,
   Utensils,
   ArrowRight,
+  Edit,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useApp } from '@/store/AppContext';
@@ -42,8 +43,11 @@ export default function ApprovalScreen() {
   const { tasks, approveTask, rejectTask } = useApp();
   const [isProcessing, setIsProcessing] = useState<'approve' | 'reject' | null>(null);
   const [slideAnim] = useState(new Animated.Value(0));
+  const [editedEmail, setEditedEmail] = useState<{ to: string; subject: string; body: string } | null>(null);
+  const [draftingEmail, setDraftingEmail] = useState(false);
 
   const task = tasks.find(t => t.id === id);
+  const [selectedEmailId, setSelectedEmailId] = useState<string | null>(task?.preview?.selectedEmailId || null);
 
   useEffect(() => {
     Animated.spring(slideAnim, {
@@ -73,9 +77,75 @@ export default function ApprovalScreen() {
   const DomainIcon = DOMAIN_ICONS[task.parsedIntent.domain];
   const preview = task.preview;
 
+  // Update selectedEmailId when task changes
+  useEffect(() => {
+    if (task?.preview?.selectedEmailId) {
+      setSelectedEmailId(task.preview.selectedEmailId);
+    }
+  }, [task?.preview?.selectedEmailId]);
+
+  const handleEmailSelect = async (emailId: string) => {
+    if (draftingEmail) return;
+    
+    setSelectedEmailId(emailId);
+    setDraftingEmail(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    
+    try {
+      // Update task preview with selected email ID
+      // The backend will use this when executing
+      if (task) {
+        const updatedPreview = {
+          ...preview,
+          selectedEmailId: emailId,
+        };
+        // Update task in context (this will be saved when approved)
+        // For now, we'll pass it during approval
+      }
+    } catch (error) {
+      console.error('Failed to select email:', error);
+    } finally {
+      setDraftingEmail(false);
+    }
+  };
+
   const handleApprove = async () => {
+    // If email selection is required but not done, don't approve
+    if (preview?.recentEmails && preview.recentEmails.length > 0 && !selectedEmailId) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      return;
+    }
+    
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setIsProcessing('approve');
+    
+    // Update task with selected email ID before approving
+    if (selectedEmailId && task) {
+      // Update the task's parsed intent to include emailId
+      const updatedIntent = {
+        ...task.parsedIntent,
+        entities: {
+          ...task.parsedIntent.entities,
+          emailId: selectedEmailId,
+        },
+      };
+      // This will be handled by the backend when executing
+    }
+    
+    // Update task with selected email ID before approving
+    if (selectedEmailId) {
+      // Update task's parsed intent to include emailId
+      // This will be sent to backend in approve call
+    }
+    
+    // Update task's parsed intent with selected email ID before approving
+    if (selectedEmailId && task) {
+      // Store selected email ID in task for backend to use
+      task.parsedIntent.entities = {
+        ...task.parsedIntent.entities,
+        emailId: selectedEmailId,
+      };
+    }
     
     setTimeout(() => {
       approveTask(task.id);
@@ -195,6 +265,150 @@ export default function ApprovalScreen() {
           </Animated.View>
         )}
 
+        {preview?.recentEmails && preview.recentEmails.length > 0 && !preview.emailPreview && (
+          <Animated.View
+            style={[
+              styles.emailSelectionSection,
+              {
+                opacity: slideAnim,
+                transform: [
+                  {
+                    translateY: slideAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [40, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <Text style={styles.sectionTitle}>Select email to reply to</Text>
+            <Text style={styles.selectionSubtitle}>
+              We found multiple emails. Please select which one to reply to:
+            </Text>
+            
+            <View style={styles.emailList}>
+              {preview.recentEmails.map((email) => (
+                <TouchableOpacity
+                  key={email.id}
+                  style={[
+                    styles.emailItem,
+                    selectedEmailId === email.id && styles.emailItemSelected,
+                  ]}
+                  onPress={() => handleEmailSelect(email.id)}
+                  activeOpacity={0.7}
+                  disabled={draftingEmail}
+                >
+                  <View style={styles.emailItemContent}>
+                    <View style={styles.emailItemHeader}>
+                      <Text style={styles.emailItemFrom} numberOfLines={1}>
+                        {email.from}
+                      </Text>
+                      {selectedEmailId === email.id && (
+                        <Check size={16} color={Colors.dark.success} />
+                      )}
+                    </View>
+                    <Text style={styles.emailItemSubject} numberOfLines={1}>
+                      {email.subject}
+                    </Text>
+                    {email.snippet && (
+                      <Text style={styles.emailItemSnippet} numberOfLines={2}>
+                        {email.snippet}
+                      </Text>
+                    )}
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+            
+            {draftingEmail && (
+              <View style={styles.draftingIndicator}>
+                <Text style={styles.draftingText}>Drafting reply...</Text>
+              </View>
+            )}
+          </Animated.View>
+        )}
+
+        {preview?.emailPreview && (
+          <Animated.View
+            style={[
+              styles.emailPreviewSection,
+              {
+                opacity: slideAnim,
+                transform: [
+                  {
+                    translateY: slideAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [40, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <View style={styles.emailPreviewHeader}>
+              <Text style={styles.sectionTitle}>Email Preview</Text>
+              <TouchableOpacity
+                style={styles.editButton}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  router.push(`/edit-email/${task.id}` as any);
+                }}
+                activeOpacity={0.7}
+              >
+                <Edit size={16} color={Colors.dark.accent} />
+                <Text style={styles.editButtonText}>Edit</Text>
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.emailPreviewCard}>
+              <View style={styles.emailField}>
+                <Text style={styles.emailLabel}>To:</Text>
+                <Text style={styles.emailValue}>{preview.emailPreview.to}</Text>
+              </View>
+              
+              <View style={styles.emailField}>
+                <Text style={styles.emailLabel}>Subject:</Text>
+                <Text style={styles.emailValue}>{preview.emailPreview.subject}</Text>
+              </View>
+              
+              <View style={[styles.emailField, styles.emailBodyField]}>
+                <Text style={styles.emailLabel}>Body:</Text>
+                <Text style={styles.emailBodyText}>{preview.emailPreview.body}</Text>
+              </View>
+            </View>
+          </Animated.View>
+        )}
+
+        {preview?.approvalReasons && preview.approvalReasons.length > 0 && (
+          <Animated.View
+            style={[
+              styles.approvalReasonsSection,
+              {
+                opacity: slideAnim,
+                transform: [
+                  {
+                    translateY: slideAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [40, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <Text style={styles.sectionTitle}>Why approval is required</Text>
+            <View style={styles.reasonsList}>
+              {preview.approvalReasons.map((reason, index) => (
+                <View key={index} style={styles.reasonItem}>
+                  <View style={styles.reasonBullet} />
+                  <Text style={styles.reasonText}>{reason}</Text>
+                </View>
+              ))}
+            </View>
+          </Animated.View>
+        )}
+
         {preview?.warnings && preview.warnings.length > 0 && (
           <Animated.View
             style={[
@@ -236,14 +450,20 @@ export default function ApprovalScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.actionButton, styles.approveButton]}
+          style={[
+            styles.actionButton,
+            styles.approveButton,
+            (preview?.recentEmails && preview.recentEmails.length > 0 && !selectedEmailId) && styles.approveButtonDisabled,
+          ]}
           onPress={handleApprove}
-          disabled={isProcessing !== null}
+          disabled={isProcessing !== null || (preview?.recentEmails && preview.recentEmails.length > 0 && !selectedEmailId)}
           activeOpacity={0.8}
         >
           <Check size={20} color={Colors.dark.background} />
           <Text style={styles.approveButtonText}>
-            {isProcessing === 'approve' ? 'Approving...' : 'Approve'}
+            {isProcessing === 'approve' ? 'Approving...' : 
+             (preview?.recentEmails && preview.recentEmails.length > 0 && !selectedEmailId) ? 'Select Email First' : 
+             'Approve'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -450,6 +670,10 @@ const styles = StyleSheet.create({
   approveButton: {
     backgroundColor: Colors.dark.success,
   },
+  approveButtonDisabled: {
+    backgroundColor: Colors.dark.surfaceElevated,
+    opacity: 0.5,
+  },
   approveButtonText: {
     fontSize: 16,
     fontWeight: '600' as const,
@@ -476,5 +700,148 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600' as const,
     color: Colors.dark.text,
+  },
+  emailPreviewSection: {
+    gap: 12,
+  },
+  emailPreviewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: Colors.dark.accentMuted,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  editButtonText: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+    color: Colors.dark.accent,
+  },
+  emailPreviewCard: {
+    backgroundColor: Colors.dark.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.dark.borderLight,
+    padding: 16,
+    gap: 12,
+  },
+  emailField: {
+    gap: 4,
+  },
+  emailBodyField: {
+    marginTop: 4,
+  },
+  emailLabel: {
+    fontSize: 11,
+    fontWeight: '600' as const,
+    color: Colors.dark.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  emailValue: {
+    fontSize: 15,
+    color: Colors.dark.text,
+    fontWeight: '500' as const,
+  },
+  emailBodyText: {
+    fontSize: 14,
+    color: Colors.dark.textSecondary,
+    lineHeight: 20,
+    marginTop: 4,
+  },
+  emailSelectionSection: {
+    gap: 12,
+  },
+  selectionSubtitle: {
+    fontSize: 14,
+    color: Colors.dark.textSecondary,
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  emailList: {
+    gap: 8,
+  },
+  emailItem: {
+    backgroundColor: Colors.dark.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.dark.borderLight,
+    padding: 16,
+  },
+  emailItemSelected: {
+    borderColor: Colors.dark.success,
+    borderWidth: 2,
+    backgroundColor: Colors.dark.surfaceElevated,
+  },
+  emailItemContent: {
+    gap: 6,
+  },
+  emailItemHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  emailItemFrom: {
+    fontSize: 15,
+    fontWeight: '600' as const,
+    color: Colors.dark.text,
+    flex: 1,
+  },
+  emailItemSubject: {
+    fontSize: 14,
+    color: Colors.dark.textSecondary,
+    fontWeight: '500' as const,
+  },
+  emailItemSnippet: {
+    fontSize: 13,
+    color: Colors.dark.textMuted,
+    lineHeight: 18,
+    marginTop: 4,
+  },
+  draftingIndicator: {
+    padding: 12,
+    backgroundColor: Colors.dark.accentMuted,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  draftingText: {
+    fontSize: 14,
+    color: Colors.dark.accent,
+    fontWeight: '500' as const,
+  },
+  approvalReasonsSection: {
+    gap: 12,
+  },
+  reasonsList: {
+    backgroundColor: Colors.dark.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.dark.borderLight,
+    padding: 16,
+    gap: 12,
+  },
+  reasonItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  reasonBullet: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.dark.accent,
+    marginTop: 6,
+  },
+  reasonText: {
+    flex: 1,
+    fontSize: 14,
+    color: Colors.dark.textSecondary,
+    lineHeight: 20,
   },
 });

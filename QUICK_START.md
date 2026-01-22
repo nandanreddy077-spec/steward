@@ -74,3 +74,7 @@ Once database is set up, we can test Google OAuth:
 
 **Current Status**: Backend ✅ | Database ⏳ | Frontend ⏳
 
+
+
+
+

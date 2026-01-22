@@ -48,10 +48,19 @@ export default function AuthScreen() {
       const { url } = event;
       console.log('Deep link received:', url);
       
-      if (url.includes('auth/callback')) {
+      // Check if this is an OAuth callback (multiple formats possible)
+      const isOAuthCallback = 
+        url.includes('auth/callback') || 
+        url.includes('auth?') ||
+        url.includes('callback?');
+      
+      if (isOAuthCallback) {
         const parsedUrl = Linking.parse(url);
         const params = parsedUrl.queryParams;
         
+        console.log('Parsed URL params:', params);
+        
+        // Check for success and userId in params
         if (params?.success === 'true' && params?.userId) {
           // OAuth successful!
           setIsLoading(null);
@@ -85,6 +94,8 @@ export default function AuthScreen() {
             Alert.alert('Error', error.message || 'Failed to complete authentication');
             setIsLoading(null);
           }
+        } else {
+          console.log('OAuth callback received but missing required params:', params);
         }
       }
     };
@@ -133,13 +144,60 @@ export default function AuthScreen() {
         redirectUrl
       );
 
-      // The deep link handler will process the result
-      // If user dismisses, just reset loading state
-      if (result.type === 'dismiss' || result.type === 'cancel') {
+      console.log('WebBrowser result:', result);
+
+      // Check if result contains the redirect URL
+      if (result.type === 'success' && result.url) {
+        // The redirect URL is in the result
+        console.log('OAuth redirect URL in result:', result.url);
+        // Process it as a deep link
+        const parsedUrl = Linking.parse(result.url);
+        const params = parsedUrl.queryParams;
+        
+        if (params?.success === 'true' && params?.userId) {
+          setIsLoading(null);
+          
+          try {
+            const userResponse = await authAPI.getUser(params.userId as string);
+            
+            if (userResponse.error || !userResponse.data) {
+              throw new Error(userResponse.error || 'Failed to fetch user data');
+            }
+
+            const userData = userResponse.data.user;
+            
+            const user: User = {
+              id: userData.id,
+              email: userData.email,
+              name: userData.name || 'User',
+              subscription: 'trial',
+              connectedAccounts: {
+                google: userData.hasGoogleTokens,
+                microsoft: false,
+              },
+            };
+            
+            login(user);
+            router.replace('/(main)/home');
+          } catch (error: any) {
+            console.error('Error handling OAuth result:', error);
+            Alert.alert('Error', error.message || 'Failed to complete authentication');
+            setIsLoading(null);
+          }
+        } else {
+          console.log('OAuth result missing required params:', params);
+          setIsLoading(null);
+        }
+      } else if (result.type === 'dismiss' || result.type === 'cancel') {
+        // User dismissed or cancelled
         setIsLoading(null);
       } else if (result.type === 'locked') {
         Alert.alert('Error', 'Please unlock your device to continue');
         setIsLoading(null);
+      } else {
+        // Other result types - the deep link handler will catch it
+        console.log('WebBrowser result type:', result.type);
+        // Don't reset loading here - let deep link handler process it
       }
     } catch (error: any) {
       console.error('OAuth error:', error);

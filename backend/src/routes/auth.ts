@@ -1,7 +1,6 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import { google } from 'googleapis';
 import { supabase } from '../utils/db';
-import { OAuth2Client } from 'google-auth-library';
 
 const router = Router();
 
@@ -15,25 +14,11 @@ const oauth2Client = new google.auth.OAuth2(
   REDIRECT_URI
 );
 
-// Token refresh helper
-async function refreshAccessToken(refreshToken: string) {
-  try {
-    const client = new OAuth2Client(
-      process.env.GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET
-    );
-    client.setCredentials({ refresh_token: refreshToken });
-    const { credentials } = await client.refreshAccessToken();
-    return credentials;
-  } catch (error) {
-    console.error('Token refresh error:', error);
-    throw new Error('Failed to refresh access token');
-  }
-}
-
 // Step 1: Get authorization URL
-router.get('/google', (req: Request, res: Response) => {
+router.get('/google', (req, res) => {
   const scopes = [
+    'https://www.googleapis.com/auth/userinfo.email',
+    'https://www.googleapis.com/auth/userinfo.profile',
     'https://www.googleapis.com/auth/calendar',
     'https://www.googleapis.com/auth/calendar.events',
     'https://www.googleapis.com/auth/gmail.readonly',
@@ -51,8 +36,8 @@ router.get('/google', (req: Request, res: Response) => {
 });
 
 // Step 2: Handle callback
-router.get('/google/callback', async (req: Request, res: Response) => {
-  const { code } = req.query;
+router.get('/google/callback', async (req, res) => {
+  const { code, state } = req.query;
 
   if (!code) {
     return res.status(400).json({ error: 'No code provided' });
@@ -61,18 +46,47 @@ router.get('/google/callback', async (req: Request, res: Response) => {
   try {
     const { tokens } = await oauth2Client.getToken(code as string);
 
+    if (!tokens.access_token) {
+      console.error('No access token received from Google');
+      return res.status(400).json({ error: 'Failed to get access token from Google' });
+    }
+
     // Get user info from Google
     oauth2Client.setCredentials(tokens);
     const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
-    const userInfo = await oauth2.userinfo.get();
+    
+    let userInfo;
+    try {
+      userInfo = await oauth2.userinfo.get();
+    } catch (userInfoError: any) {
+      console.error('Error fetching user info from Google:', userInfoError);
+      // If we can't get user info, we can still proceed with tokens
+      // We'll use a placeholder email from the token if available
+      // For now, return an error but log the actual issue
+      return res.status(500).json({ 
+        error: 'Failed to authenticate',
+        details: userInfoError.message || 'Could not fetch user information from Google'
+      });
+    }
+
+    if (!userInfo.data || !userInfo.data.email) {
+      console.error('Invalid user info from Google:', userInfo.data);
+      return res.status(500).json({ error: 'Invalid user information from Google' });
+    }
 
     // Store or update user in database
     // First check if user exists
-    const { data: existingUser } = await supabase
+    const { data: existingUser, error: userCheckError } = await supabase
       .from('users')
       .select('id')
       .eq('email', userInfo.data.email)
       .single();
+    
+    if (userCheckError && userCheckError.code !== 'PGRST116') {
+      // PGRST116 is "not found" which is expected for new users
+      console.error('Error checking for existing user:', userCheckError);
+      return res.status(500).json({ error: 'Database error while checking user' });
+    }
 
     let user;
     if (existingUser) {
@@ -128,9 +142,31 @@ router.get('/google/callback', async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'Failed to save user' });
     }
 
-    // Return success page that redirects to app using custom URL scheme
-    const appRedirectUrl = `rork-app://auth/callback?success=true&userId=${user.id}&email=${encodeURIComponent(user.email || '')}&name=${encodeURIComponent(user.name || '')}`;
+    // Build redirect URL - use the same format that Linking.createURL generates
+    const queryParams = `success=true&userId=${user.id}&email=${encodeURIComponent(user.email || '')}&name=${encodeURIComponent(user.name || '')}`;
     
+    // The app uses Linking.createURL('/auth/callback') which generates:
+    // exp://[expo-dev-server-url]/--/auth/callback
+    // From the logs, we can see the Expo URL is: exp://gzkhens-nandan_07-8081.exp.direct
+    // So the full redirect URL should be: exp://gzkhens-nandan_07-8081.exp.direct/--/auth/callback
+    
+    // Use the Expo URL format that matches what Linking.createURL generates
+    const expoRedirectUrl = `exp://gzkhens-nandan_07-8081.exp.direct/--/auth/callback?${queryParams}`;
+    const appRedirectUrl = `rork-app://auth/callback?${queryParams}`;
+    
+    // Try direct redirect - WebBrowser.openAuthSessionAsync should catch it
+    // The redirectUrl passed to openAuthSessionAsync is what it listens for
+    const userAgent = req.headers['user-agent'] || '';
+    const isMobile = /Mobile|Android|iPhone|iPad/.test(userAgent);
+    
+    // For mobile, redirect to the Expo URL format that matches Linking.createURL
+    // This is what WebBrowser.openAuthSessionAsync is listening for
+    if (isMobile) {
+      res.redirect(expoRedirectUrl);
+      return;
+    }
+    
+    // Fallback: Send HTML page with redirect attempts
     res.send(`
       <!DOCTYPE html>
       <html>
@@ -202,23 +238,40 @@ router.get('/google/callback', async (req: Request, res: Response) => {
               <p>Logged in as:</p>
               <p class="email">${user.email}</p>
             </div>
-            <a href="${appRedirectUrl}" class="button" id="redirectButton" style="display: none;">
+            <a href="${expoRedirectUrl}" class="button" id="redirectButton" onclick="window.location.href='${expoRedirectUrl}'; return false;">
               Return to App
             </a>
           </div>
           <script>
-            // Try to redirect to app immediately
-            setTimeout(function() {
-              window.location.href = '${appRedirectUrl}';
-            }, 500);
-            
-            // Fallback: show button if redirect doesn't work
-            setTimeout(function() {
-              var button = document.getElementById('redirectButton');
-              if (button) {
-                button.style.display = 'inline-block';
+            // Try multiple redirect methods
+            function tryRedirect() {
+              // Method 1: Try Expo scheme (what WebBrowser.openAuthSessionAsync expects)
+              try {
+                window.location = '${expoRedirectUrl}';
+              } catch (e) {
+                console.log('Expo redirect failed:', e);
               }
-            }, 2000);
+              
+              // Method 2: Try custom scheme as fallback
+              setTimeout(function() {
+                try {
+                  window.location = '${appRedirectUrl}';
+                } catch (e) {
+                  console.log('Custom scheme redirect failed:', e);
+                }
+              }, 500);
+              
+              // Method 3: Show button as fallback
+              setTimeout(function() {
+                var button = document.getElementById('redirectButton');
+                if (button) {
+                  button.style.display = 'inline-block';
+                }
+              }, 1500);
+            }
+            
+            // Try redirect immediately
+            tryRedirect();
           </script>
         </body>
       </html>
@@ -239,7 +292,7 @@ router.get('/google/callback', async (req: Request, res: Response) => {
 });
 
 // Get user by ID (for app to fetch user data after OAuth)
-router.get('/user/:userId', async (req: Request, res: Response) => {
+router.get('/user/:userId', async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('users')
@@ -264,8 +317,8 @@ router.get('/user/:userId', async (req: Request, res: Response) => {
   }
 });
 
-// Get user tokens (for API calls) - with auto-refresh
-router.get('/tokens/:userId', async (req: Request, res: Response) => {
+// Get user tokens (for API calls)
+router.get('/tokens/:userId', async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('users')
@@ -277,87 +330,9 @@ router.get('/tokens/:userId', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    let tokens = data.google_tokens;
-
-    // Check if token is expired and refresh if needed
-    if (tokens?.expiry_date && tokens.refresh_token) {
-      const now = Date.now();
-      const expiryDate = tokens.expiry_date;
-      
-      // Refresh if token expires in less than 5 minutes
-      if (expiryDate < now + 5 * 60 * 1000) {
-        try {
-          const newTokens = await refreshAccessToken(tokens.refresh_token);
-          
-          // Update tokens in database
-          await supabase
-            .from('users')
-            .update({
-              google_tokens: {
-                ...tokens,
-                access_token: newTokens.access_token,
-                expiry_date: newTokens.expiry_date,
-              },
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', req.params.userId);
-          
-          tokens = {
-            ...tokens,
-            access_token: newTokens.access_token,
-            expiry_date: newTokens.expiry_date,
-          };
-        } catch (refreshError) {
-          console.error('Failed to refresh token:', refreshError);
-          return res.status(401).json({ 
-            error: 'Token expired and refresh failed. Please re-authenticate.',
-            needsReauth: true 
-          });
-        }
-      }
-    }
-
-    res.json({ tokens });
+    res.json({ tokens: data.google_tokens });
   } catch (error) {
-    console.error('Get tokens error:', error);
     res.status(500).json({ error: 'Failed to get tokens' });
-  }
-});
-
-// Refresh tokens endpoint
-router.post('/refresh/:userId', async (req: Request, res: Response) => {
-  try {
-    const { data, error } = await supabase
-      .from('users')
-      .select('google_tokens')
-      .eq('id', req.params.userId)
-      .single();
-
-    if (error || !data || !data.google_tokens?.refresh_token) {
-      return res.status(404).json({ error: 'User not found or no refresh token available' });
-    }
-
-    const newTokens = await refreshAccessToken(data.google_tokens.refresh_token);
-    
-    // Update tokens in database
-    const updatedTokens = {
-      ...data.google_tokens,
-      access_token: newTokens.access_token,
-      expiry_date: newTokens.expiry_date,
-    };
-
-    await supabase
-      .from('users')
-      .update({
-        google_tokens: updatedTokens,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', req.params.userId);
-
-    res.json({ tokens: updatedTokens });
-  } catch (error) {
-    console.error('Refresh error:', error);
-    res.status(500).json({ error: 'Failed to refresh tokens' });
   }
 });
 

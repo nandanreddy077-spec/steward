@@ -99,7 +99,27 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Connected Accounts</Text>
           <View style={styles.card}>
-            <View style={styles.settingItem}>
+            <TouchableOpacity 
+              style={styles.settingItem} 
+              activeOpacity={0.7}
+              onPress={() => {
+                if (!user?.connectedAccounts.google) {
+                  router.push('/auth');
+                } else {
+                  Alert.alert(
+                    'Reconnect Google',
+                    'Do you want to reconnect your Google account?',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      { 
+                        text: 'Reconnect', 
+                        onPress: () => router.push('/auth')
+                      }
+                    ]
+                  );
+                }
+              }}
+            >
               <View style={styles.settingLeft}>
                 <View style={[styles.settingIcon, { backgroundColor: Colors.dark.infoMuted }]}>
                   <Calendar size={18} color={Colors.dark.info} />
@@ -107,18 +127,40 @@ export default function SettingsScreen() {
                 <View>
                   <Text style={styles.settingLabel}>Google Calendar</Text>
                   <Text style={styles.settingDescription}>
-                    {user?.connectedAccounts.google ? 'Connected' : 'Not connected'}
+                    {user?.connectedAccounts.google ? 'Connected' : 'Tap to connect'}
                   </Text>
                 </View>
               </View>
-              {user?.connectedAccounts.google && (
+              {user?.connectedAccounts.google ? (
                 <Check size={20} color={Colors.dark.success} />
+              ) : (
+                <ChevronRight size={20} color={Colors.dark.textMuted} />
               )}
-            </View>
+            </TouchableOpacity>
 
             <View style={styles.divider} />
 
-            <View style={styles.settingItem}>
+            <TouchableOpacity 
+              style={styles.settingItem} 
+              activeOpacity={0.7}
+              onPress={() => {
+                if (!user?.connectedAccounts.google) {
+                  router.push('/auth');
+                } else {
+                  Alert.alert(
+                    'Reconnect Google',
+                    'Do you want to reconnect your Google account?',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      { 
+                        text: 'Reconnect', 
+                        onPress: () => router.push('/auth')
+                      }
+                    ]
+                  );
+                }
+              }}
+            >
               <View style={styles.settingLeft}>
                 <View style={[styles.settingIcon, { backgroundColor: Colors.dark.successMuted }]}>
                   <Mail size={18} color={Colors.dark.success} />
@@ -126,14 +168,16 @@ export default function SettingsScreen() {
                 <View>
                   <Text style={styles.settingLabel}>Gmail</Text>
                   <Text style={styles.settingDescription}>
-                    {user?.connectedAccounts.google ? 'Connected' : 'Not connected'}
+                    {user?.connectedAccounts.google ? 'Connected' : 'Tap to connect'}
                   </Text>
                 </View>
               </View>
-              {user?.connectedAccounts.google && (
+              {user?.connectedAccounts.google ? (
                 <Check size={20} color={Colors.dark.success} />
+              ) : (
+                <ChevronRight size={20} color={Colors.dark.textMuted} />
               )}
-            </View>
+            </TouchableOpacity>
           </View>
         </View>
 

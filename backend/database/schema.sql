@@ -62,13 +62,18 @@ CREATE INDEX IF NOT EXISTS idx_activity_task_id ON activity_log(task_id);
 CREATE INDEX IF NOT EXISTS idx_activity_timestamp ON activity_log(timestamp DESC);
 
 -- Function to update updated_at timestamp
+-- SET search_path = '' prevents search path injection attacks
 CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER 
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
 BEGIN
   NEW.updated_at = NOW();
   RETURN NEW;
 END;
-$$ language 'plpgsql';
+$$;
 
 -- Triggers to auto-update updated_at
 DROP TRIGGER IF EXISTS update_users_updated_at ON users;
@@ -83,9 +88,21 @@ DROP TRIGGER IF EXISTS update_user_settings_updated_at ON user_settings;
 CREATE TRIGGER update_user_settings_updated_at BEFORE UPDATE ON user_settings
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- Row Level Security (RLS) - Disable for now (we'll use API keys)
--- You can enable RLS later if you add Supabase Auth
+-- Row Level Security (RLS)
+-- NOTE: RLS is intentionally disabled because we use API key authentication (service role key)
+-- The backend validates user_id in application logic before accessing data
+-- 
+-- Security Advisor will show warnings, but this is acceptable for API key-based auth
+-- If you want to enable RLS later with Supabase Auth, uncomment the policies below
+-- and remove the DISABLE statements
+
 ALTER TABLE users DISABLE ROW LEVEL SECURITY;
 ALTER TABLE tasks DISABLE ROW LEVEL SECURITY;
 ALTER TABLE activity_log DISABLE ROW LEVEL SECURITY;
 ALTER TABLE user_settings DISABLE ROW LEVEL SECURITY;
+
+-- Optional: RLS Policies (uncomment if you enable RLS and use Supabase Auth)
+-- Enable RLS: ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+-- Then add policies like:
+-- CREATE POLICY "Users can view own data" ON users FOR SELECT USING (auth.uid() = id);
+-- CREATE POLICY "Users can update own data" ON users FOR UPDATE USING (auth.uid() = id);

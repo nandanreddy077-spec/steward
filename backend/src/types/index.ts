@@ -13,6 +13,21 @@ export interface TaskPreview {
   description: string;
   changes: PreviewChange[];
   warnings?: string[];
+  approvalReasons?: string[];
+  emailPreview?: {
+    to: string;
+    subject: string;
+    body: string;
+  };
+  recentEmails?: Array<{
+    id: string;
+    from: string;
+    fromEmail: string;
+    subject: string;
+    snippet: string;
+    date: string;
+  }>;
+  selectedEmailId?: string;
 }
 
 export interface PreviewChange {
@@ -37,4 +52,8 @@ export interface User {
   created_at: string;
   updated_at: string;
 }
+
+
+
+
 

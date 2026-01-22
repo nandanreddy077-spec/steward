@@ -28,6 +28,7 @@ export interface TaskResult {
   success: boolean;
   message: string;
   data?: Record<string, unknown>;
+  safetyReasons?: string[];
 }
 
 export interface TaskPreview {
@@ -35,6 +36,21 @@ export interface TaskPreview {
   description: string;
   changes: PreviewChange[];
   warnings?: string[];
+  approvalReasons?: string[];
+  emailPreview?: {
+    to: string;
+    subject: string;
+    body: string;
+  };
+  recentEmails?: Array<{
+    id: string;
+    from: string;
+    fromEmail: string;
+    subject: string;
+    snippet: string;
+    date: string;
+  }>;
+  selectedEmailId?: string;
 }
 
 export interface PreviewChange {

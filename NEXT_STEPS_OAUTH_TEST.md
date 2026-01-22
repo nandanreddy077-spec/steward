@@ -183,3 +183,7 @@ Let me know:
 3. What happens after you allow permissions?
 4. Do you see user data in the database?
 
+
+
+
+
