@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["nodejs_20", "npm"]
+nixPkgs = ["nodejs_20"]
 
 [phases.install]
 cmds = ["npm install --legacy-peer-deps --include=dev"]
@@ -9,4 +9,7 @@ cmds = ["npm run build"]
 
 [start]
 cmd = "node dist/server.js"
+
+[variables]
+NPM_CONFIG_LEGACY_PEER_DEPS = "true"
 
